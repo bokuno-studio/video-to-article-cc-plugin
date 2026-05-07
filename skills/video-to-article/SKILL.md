@@ -29,7 +29,24 @@ python3 -c "from faster_whisper import WhisperModel"  # pip install faster-whisp
 
 ## 実行フロー
 
-### 0. 前提確認
+### 0. 重複チェック
+
+処理を開始する前に、同じ動画の記事がすでに存在しないか確認する。
+
+```bash
+# 動画IDを抽出（YouTube: v=XXX、Twitter/X: status/XXX）
+VIDEO_URL="<URL>"
+VIDEO_ID=$(echo "$VIDEO_URL" | grep -oP '(?<=v=)[^&]+|(?<=youtu\.be/)[^?]+|(?<=status/)[0-9]+')
+
+# zenn-content の記事ディレクトリを検索
+ZENN_DIR="/Volumes/Extreme SSD/dev/tmp/zenn-content/articles"
+MATCH=$(grep -rl "$VIDEO_ID" "$ZENN_DIR" 2>/dev/null)
+```
+
+- マッチあり → 「すでに `<ファイル名>` として記事化されています。続けますか？」とユーザーに確認し、指示があれば続行
+- マッチなし → そのまま次のステップへ
+
+### 0.5. 前提確認
 
 ツールが揃っているか確認し、なければインストールする。
 
@@ -39,7 +56,7 @@ which ffmpeg || brew install ffmpeg
 python3 -c "from faster_whisper import WhisperModel" 2>/dev/null || pip install faster-whisper --break-system-packages
 ```
 
-### 1. 音声ダウンロード
+### 1. 音声ダウンロード（YouTube・Twitter/X 両対応）
 
 ```bash
 # 音声のみ抽出（MP3・64kbps・16kHz・モノラル）

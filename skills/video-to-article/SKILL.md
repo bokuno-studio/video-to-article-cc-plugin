@@ -1,13 +1,13 @@
 ---
 name: video-to-article
-description: Twitter/X の動画URLから記事を自動生成して4媒体に投稿する。「この動画まとめて」「記事にして」と言われたら使う。yt-dlpで音声DL→faster-whisperで文字起こし→ffmpegでスクショ抽出→記事執筆→zenn-postスキルで投稿。
-argument-hint: [Twitter/X の動画URL]
+description: 動画URL（Twitter/X・YouTube）から記事を自動生成して4媒体に投稿する。「この動画まとめて」「記事にして」と言われたら使う。yt-dlpで音声DL→faster-whisperで文字起こし→ffmpegでスクショ抽出→記事執筆→4媒体投稿。
+argument-hint: [動画URL（Twitter/X または YouTube）]
 allowed-tools: [Read, Edit, Write, Bash]
 ---
 
 # video-to-article スキル
 
-Twitter/X の動画URLを受け取り、記事を自動生成して Zenn・Qiita・dev.to・Hashnode の4媒体に投稿する。
+Twitter/X または YouTube の動画URLを受け取り、記事を自動生成して Zenn・Qiita・dev.to・Hashnode の4媒体に投稿する。
 
 ## 依存ツール
 
@@ -46,7 +46,41 @@ MATCH=$(grep -rl "$VIDEO_ID" "$ZENN_DIR" 2>/dev/null)
 - マッチあり → 「すでに `<ファイル名>` として記事化されています。続けますか？」とユーザーに確認し、指示があれば続行
 - マッチなし → そのまま次のステップへ
 
-### 0.5. 前提確認
+### 0.5. 一次ソース確認
+
+渡された URL が「紹介・解説・リポスト」系のコンテンツでないか確認する。
+
+```bash
+# yt-dlp でメタデータを取得し、投稿者・タイトル・説明文を確認
+yt-dlp --dump-json "<URL>" | python3 -c "
+import sys, json
+d = json.loads(sys.stdin.read().split('\n')[0])
+print('uploader:', d.get('uploader',''))
+print('title:', d.get('title',''))
+print('description:', d.get('description','')[:300])
+"
+```
+
+以下のいずれかに該当する場合は**一次ソースを探す**：
+
+- タイトルや説明文に「紹介」「話題」「まとめ」「re:」「watch this」など二次的な言葉がある
+- 投稿者が元の発表者・組織と明らかに異なる
+- 説明文に外部リンク（t.co・YouTube URL）が含まれている
+
+**一次ソースの探し方：**
+
+1. 説明文の t.co リンクを展開して確認する
+   ```bash
+   curl -sI "<t.co URL>" | grep -i location
+   ```
+2. 展開先がまた別のツイートなら、そのツイートの説明文も確認する
+3. それでも見つからなければ Web 検索でタイトル・登壇者名をキーワードに探す
+
+一次ソースが見つかった場合：
+- 「元ネタは〈URL〉のようです。そちらで記事化しますか？」とユーザーに確認
+- ユーザーが一次ソースを指定したらそちらの URL で続行
+
+### 1. 前提確認
 
 ツールが揃っているか確認し、なければインストールする。
 
@@ -56,7 +90,7 @@ which ffmpeg || brew install ffmpeg
 python3 -c "from faster_whisper import WhisperModel" 2>/dev/null || pip install faster-whisper --break-system-packages
 ```
 
-### 1. 音声ダウンロード（YouTube・Twitter/X 両対応）
+### 2. 音声ダウンロード（YouTube・Twitter/X 両対応）
 
 ```bash
 # 音声のみ抽出（MP3・64kbps・16kHz・モノラル）
@@ -66,7 +100,7 @@ yt-dlp -x --audio-format mp3 --audio-quality 0 \
   "<URL>"
 ```
 
-### 2. 動画ダウンロード（スクショ用）
+### 3. 動画ダウンロード（スクショ用）
 
 ```bash
 yt-dlp -f "best[ext=mp4]" \
@@ -74,7 +108,7 @@ yt-dlp -f "best[ext=mp4]" \
   "<URL>"
 ```
 
-### 3. 文字起こし（faster-whisper・ローカル完結・APIキー不要）
+### 4. 文字起こし（faster-whisper・ローカル完結・APIキー不要）
 
 ```python
 from faster_whisper import WhisperModel
@@ -112,7 +146,7 @@ with open(output, "w") as out:
         print(f"[{ts}] {len(text)}文字")
 ```
 
-### 4. スクリーンショット抽出
+### 5. スクリーンショット抽出
 
 文字起こし内容を読んでから、重要シーンのタイムスタンプを判断してスクショを取る。
 
@@ -134,7 +168,7 @@ git commit -m "feat: add images for <slug>"
 git push origin main
 ```
 
-### 5. 記事構成を組み立てる
+### 6. 記事構成を組み立てる
 
 文字起こし全文・スクショ内容をもとに以下の構成で記事を書く。
 
@@ -186,12 +220,12 @@ published: false
 ![キャプション](/images/<slug>-01.jpg)
 ```
 
-### 6. ユーザーに確認
+### 7. ユーザーに確認
 
 記事の内容（タイトル・概要・本文）を見せて「このまま公開しますか？」と確認する。
 **公開前に必ず確認を取ること。**
 
-### 7. zenn-post スキルで投稿
+### 8. zenn-post スキルで投稿
 
 OKが出たら **zenn-post スキルを呼び出して4媒体に投稿する**。
 
